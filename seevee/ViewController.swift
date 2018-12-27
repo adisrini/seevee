@@ -46,6 +46,37 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         // Pause the view's session
         sceneView.session.pause()
     }
+    
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        let result = sceneView.hitTest(touch.location(in: sceneView), types: [ARHitTestResult.ResultType.featurePoint])
+        guard let hitResult = result.last else { return }
+        let hitTransform = SCNMatrix4(hitResult.worldTransform)
+        let hitVector = SCNVector3Make(hitTransform.m41, hitTransform.m42, hitTransform.m43)
+        createBall(position: hitVector)
+    }
+    
+    func createBall(position: SCNVector3) {
+        let plane = SCNPlane(width: 0.1, height: 0.1)
+        plane.firstMaterial?.diffuse.contents = UIColor.black
+        let planeNode = SCNNode(geometry: plane)
+        
+        let text = SCNText(string: "Hello!", extrusionDepth: 1)
+        text.firstMaterial?.diffuse.contents = UIColor.white
+        let textNode = SCNNode(geometry: text)
+        textNode.position = SCNVector3(x: 0, y: 0, z: 0)
+        textNode.scale = SCNVector3(x: 0.001, y: 0.001, z: 0.001)
+        planeNode.addChildNode(textNode)
+        
+        
+        let billboardConstraint = SCNBillboardConstraint()
+        billboardConstraint.freeAxes = SCNBillboardAxis.Y
+        planeNode.constraints = [billboardConstraint]
+        planeNode.position = position
+        
+        sceneView.scene.rootNode.addChildNode(planeNode)
+        sceneView.autoenablesDefaultLighting = true
+    }
 
     // MARK: - ARSCNViewDelegate
     
