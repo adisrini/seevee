@@ -51,37 +51,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         sceneView.session.pause()
     }
     
-//    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-//        guard let touch = touches.first else { return }
-//        let result = sceneView.hitTest(touch.location(in: sceneView), types: [ARHitTestResult.ResultType.featurePoint])
-//        guard let hitResult = result.last else { return }
-//        let hitTransform = SCNMatrix4(hitResult.worldTransform)
-//        let hitVector = SCNVector3Make(hitTransform.m41, hitTransform.m42, hitTransform.m43)
-//        createBall(position: hitVector)
-//    }
-//
-//    func createBall(position: SCNVector3) {
-//        let plane = SCNPlane(width: 0.1, height: 0.1)
-//        plane.firstMaterial?.diffuse.contents = UIColor.black
-//        let planeNode = SCNNode(geometry: plane)
-//
-//        let text = SCNText(string: "Hello!", extrusionDepth: 1)
-//        text.firstMaterial?.diffuse.contents = UIColor.white
-//        let textNode = SCNNode(geometry: text)
-//        textNode.position = SCNVector3(x: 0, y: 0, z: 0)
-//        textNode.scale = SCNVector3(x: 0.001, y: 0.001, z: 0.001)
-//        planeNode.addChildNode(textNode)
-//
-//
-//        let billboardConstraint = SCNBillboardConstraint()
-//        billboardConstraint.freeAxes = SCNBillboardAxis.Y
-//        planeNode.constraints = [billboardConstraint]
-//        planeNode.position = position
-//
-//        sceneView.scene.rootNode.addChildNode(planeNode)
-//        sceneView.autoenablesDefaultLighting = true
-//    }
-    
     // MARK: - ARSessionDelegate
     
     public func session(_ session: ARSession, didUpdate frame: ARFrame) {
@@ -97,7 +66,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
             
             // Get the first result out of the results, if there are any
             if let results = request.results, let result = results.first as? VNBarcodeObservation {
-                
                 // Get the bounding box for the bar code and find the center
                 var rect = result.boundingBox
                 
@@ -112,17 +80,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
                 DispatchQueue.main.async {
                     
                     // Perform a hit test on the ARFrame to find a surface
-                    let hitTestResults = frame.hitTest(center, types: [.featurePoint/*, .estimatedHorizontalPlane, .existingPlane, .existingPlaneUsingExtent*/] )
+                    let hitTestResults = frame.hitTest(center, types: [.featurePoint] )
                     
                     // If we have a result, process it
                     if let hitTestResult = hitTestResults.first {
                         
-                        // If we already have an anchor, update the position of the attached node
+                        // If we already have an anchor, update the position and content of the attached node
                         if let detectedDataAnchor = self.detectedDataAnchor,
                             let node = self.sceneView.node(for: detectedDataAnchor) {
                             
                             node.transform = SCNMatrix4(hitTestResult.worldTransform)
-                            
+                            let textNode = node.childNode(withName: "textContent", recursively: true)?.geometry as! SCNText
+                            textNode.string = result.payloadStringValue
                         } else {
                             // Create an anchor. The node will be created in delegate methods
                             self.detectedDataAnchor = ARAnchor(transform: hitTestResult.worldTransform)
@@ -163,18 +132,27 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         // If this is our anchor, create a node
         if self.detectedDataAnchor?.identifier == anchor.identifier {
             
-            // Create a 3D Cup to display
-            guard let virtualObjectScene = SCNScene(named: "cup.scn", inDirectory: "art.scnassets/cup") else {
-                return nil
-            }
+            let plane = SCNPlane(width: 0.1, height: 0.1)
+            plane.firstMaterial?.diffuse.contents = UIColor.init(white: 1, alpha: 0.8)
+            plane.firstMaterial?.lightingModel = .physicallyBased
+            let planeNode = SCNNode(geometry: plane)
+            planeNode.movabilityHint = .movable
+            let billboardConstraint = SCNBillboardConstraint()
+            billboardConstraint.freeAxes = SCNBillboardAxis.all
+            planeNode.constraints = [billboardConstraint]
+            
+            let text = SCNText(string: "Loading...", extrusionDepth: 1)
+            text.firstMaterial?.diffuse.contents = UIColor.black
+            text.firstMaterial?.lightingModel = .physicallyBased
+            let textNode = SCNNode(geometry: text)
+            textNode.movabilityHint = .movable
+            textNode.name = "textContent"
+            textNode.scale = SCNVector3(x: 0.001, y: 0.001, z: 0.001)
+            
+            planeNode.addChildNode(textNode)
             
             let wrapperNode = SCNNode()
-            
-            for child in virtualObjectScene.rootNode.childNodes {
-                child.geometry?.firstMaterial?.lightingModel = .physicallyBased
-                child.movabilityHint = .movable
-                wrapperNode.addChildNode(child)
-            }
+            wrapperNode.addChildNode(planeNode)
             
             // Set its position based off the anchor
             wrapperNode.transform = SCNMatrix4(anchor.transform)
