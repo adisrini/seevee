@@ -10,6 +10,7 @@ import UIKit
 import SceneKit
 import ARKit
 import Vision
+import FirebaseStorage
 
 class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
 
@@ -18,12 +19,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     // State
     var detectedDataAnchor: ARAnchor?
     var processing = false
+    var data: String = ""
     
     // CONSTANTS
-    let CONTENT_NAME = "TEXT_CONTENT"
+    let CONTENT_NAME = "CONTENT"
     let PLANE_NAME = "CONTENT_BG"
-    let FONT_SCALE: Float = 0.005
-    let PLANE_SCALE: Float = 30
+    let CONTENT_SCALE: Float = (1/40)
+    let PLANE_SCALE: Float = (1/30)
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -98,19 +100,38 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
                             
                             node.transform = SCNMatrix4(hitTestResult.worldTransform)
                             
-                            // Replace text
-                            node.replaceChildNode(
-                                node.childNode(withName: self.CONTENT_NAME, recursively: true)!,
-                                with: self.createTextNode(string: result.payloadStringValue!)
-                            )
-                            
-                            // Replace plane
-                            node.replaceChildNode(
-                                node.childNode(withName: self.PLANE_NAME, recursively: true)!,
-                                with: self.createPlaneNode(
-                                    color: self.normalizeUIColor(red: 48, green: 64, blue: 77, alpha: 0.8)
+                            // If payload is different, replace contents and update state
+                            if let payload = result.payloadStringValue,
+                                self.data != payload {
+                                self.data = payload
+                                
+                                let imageRef = Storage.storage().reference(withPath: payload)
+                                let placeholderImage = UIImage(named: "placeholder.png")!
+                                let errorImage = UIImage(named: "error.png")!
+                                
+                                node.replaceChildNode(
+                                    node.childNode(withName: self.CONTENT_NAME, recursively: true)!,
+                                    with: self.createContentNode(image: placeholderImage)
                                 )
-                            )
+                                
+                                imageRef.getData(maxSize: 1 * 1024 * 1024) { data, error in
+                                    if error != nil {
+                                        // Uh-oh, an error occurred!
+                                        let image = errorImage
+                                        node.replaceChildNode(
+                                            node.childNode(withName: self.CONTENT_NAME, recursively: true)!,
+                                            with: self.createContentNode(image: image)
+                                        )
+                                    } else {
+                                        // Data is returned
+                                        let image = UIImage(data: data!) ?? errorImage
+                                        node.replaceChildNode(
+                                            node.childNode(withName: self.CONTENT_NAME, recursively: true)!,
+                                            with: self.createContentNode(image: image)
+                                        )
+                                    }
+                                }
+                            }
                         } else {
                             // Create an anchor. The node will be created in delegate methods
                             self.detectedDataAnchor = ARAnchor(transform: hitTestResult.worldTransform)
@@ -150,12 +171,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {
         // If this is our anchor, create a node
         if self.detectedDataAnchor?.identifier == anchor.identifier {
-            let textNode = createTextNode(string: "Loading...")
-            let planeNode = createPlaneNode(color: UIColor.orange)
+            let placeholderImage = UIImage(named: "placeholder.png")!
+            
+            let contentNode = createContentNode(image: placeholderImage)
+            let planeNode = createPlaneNode(color: normalizeUIColor(red: 48, green: 64, blue: 77, alpha: 0.8))
             
             let wrapperNode = SCNNode()
             wrapperNode.addChildNode(planeNode)
-            wrapperNode.addChildNode(textNode)
+            wrapperNode.addChildNode(contentNode)
             
             // Set its position based off the anchor
             wrapperNode.transform = SCNMatrix4(anchor.transform)
@@ -166,26 +189,24 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         return nil
     }
     
-    func createTextNode(string: String) -> SCNNode {
-        let text = SCNText(string: string, extrusionDepth: 0.2)
-        text.firstMaterial?.diffuse.contents = UIColor.white
-        text.font = UIFont.systemFont(ofSize: 1)
-        let textNode = SCNNode(geometry: text)
-        textNode.movabilityHint = .movable
-        textNode.name = self.CONTENT_NAME
-        let (min, max) = (text.boundingBox.min, text.boundingBox.max)
-        let dx = min.x + 0.5 * (max.x - min.x)
-        let dy = min.y + 0.5 * (max.y - min.y)
-        let dz = min.z + 0.5 * (max.z - min.z)
-        textNode.pivot = SCNMatrix4MakeTranslation(dx, dy, dz)
-        textNode.scale = SCNVector3(x: self.FONT_SCALE, y: self.FONT_SCALE, z: self.FONT_SCALE)
-        addBillboardConstraint(textNode)
+    func createContentNode(image: UIImage) -> SCNNode {
+        let ratio = Float(image.size.width / image.size.height)
+        let (width, height) = ratio > 1 ?
+            (4 * self.CONTENT_SCALE, (4 * self.CONTENT_SCALE) / ratio)
+          : ((3 * self.CONTENT_SCALE) * ratio, 3 * self.CONTENT_SCALE)
+        let plane = SCNPlane(width: CGFloat(width), height: CGFloat(height))
+        let contentNode = SCNNode(geometry: plane)
+        contentNode.geometry?.firstMaterial?.diffuse.contents = image
+        addBillboardConstraint(contentNode)
+        contentNode.movabilityHint = .movable
+        contentNode.name = self.CONTENT_NAME
+        contentNode.position.z = 0.01
         
-        return textNode
+        return contentNode
     }
     
     func createPlaneNode(color: UIColor) -> SCNNode {
-        let (width, height) = (4 / self.PLANE_SCALE, 3 / self.PLANE_SCALE)
+        let (width, height) = (4 * self.PLANE_SCALE, 3 * self.PLANE_SCALE)
         let plane = SCNPlane(width: CGFloat(width), height: CGFloat(height))
         plane.firstMaterial?.diffuse.contents = color
         plane.firstMaterial?.lightingModel = .physicallyBased
