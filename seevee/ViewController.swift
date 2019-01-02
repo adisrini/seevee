@@ -15,8 +15,15 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
 
     @IBOutlet var sceneView: ARSCNView!
     
+    // State
     var detectedDataAnchor: ARAnchor?
     var processing = false
+    
+    // CONSTANTS
+    let CONTENT_NAME = "TEXT_CONTENT"
+    let PLANE_NAME = "CONTENT_BG"
+    let FONT_SCALE: Float = 0.005
+    let PLANE_SCALE: Float = 30
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -90,8 +97,20 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
                             let node = self.sceneView.node(for: detectedDataAnchor) {
                             
                             node.transform = SCNMatrix4(hitTestResult.worldTransform)
-                            let textNode = node.childNode(withName: "textContent", recursively: true)?.geometry as! SCNText
-                            textNode.string = result.payloadStringValue
+                            
+                            // Replace text
+                            node.replaceChildNode(
+                                node.childNode(withName: self.CONTENT_NAME, recursively: true)!,
+                                with: self.createTextNode(string: result.payloadStringValue!)
+                            )
+                            
+                            // Replace plane
+                            node.replaceChildNode(
+                                node.childNode(withName: self.PLANE_NAME, recursively: true)!,
+                                with: self.createPlaneNode(
+                                    color: self.normalizeUIColor(red: 48, green: 64, blue: 77, alpha: 0.8)
+                                )
+                            )
                         } else {
                             // Create an anchor. The node will be created in delegate methods
                             self.detectedDataAnchor = ARAnchor(transform: hitTestResult.worldTransform)
@@ -131,28 +150,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {
         // If this is our anchor, create a node
         if self.detectedDataAnchor?.identifier == anchor.identifier {
-            
-            let plane = SCNPlane(width: 0.1, height: 0.1)
-            plane.firstMaterial?.diffuse.contents = UIColor.init(white: 1, alpha: 0.8)
-            plane.firstMaterial?.lightingModel = .physicallyBased
-            let planeNode = SCNNode(geometry: plane)
-            planeNode.movabilityHint = .movable
-            let billboardConstraint = SCNBillboardConstraint()
-            billboardConstraint.freeAxes = SCNBillboardAxis.all
-            planeNode.constraints = [billboardConstraint]
-            
-            let text = SCNText(string: "Loading...", extrusionDepth: 1)
-            text.firstMaterial?.diffuse.contents = UIColor.black
-            text.firstMaterial?.lightingModel = .physicallyBased
-            let textNode = SCNNode(geometry: text)
-            textNode.movabilityHint = .movable
-            textNode.name = "textContent"
-            textNode.scale = SCNVector3(x: 0.001, y: 0.001, z: 0.001)
-            
-            planeNode.addChildNode(textNode)
+            let textNode = createTextNode(string: "Loading...")
+            let planeNode = createPlaneNode(color: UIColor.orange)
             
             let wrapperNode = SCNNode()
             wrapperNode.addChildNode(planeNode)
+            wrapperNode.addChildNode(textNode)
             
             // Set its position based off the anchor
             wrapperNode.transform = SCNMatrix4(anchor.transform)
@@ -162,6 +165,53 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         
         return nil
     }
+    
+    func createTextNode(string: String) -> SCNNode {
+        let text = SCNText(string: string, extrusionDepth: 0.2)
+        text.firstMaterial?.diffuse.contents = UIColor.white
+        text.font = UIFont.systemFont(ofSize: 1)
+        let textNode = SCNNode(geometry: text)
+        textNode.movabilityHint = .movable
+        textNode.name = self.CONTENT_NAME
+        let (min, max) = (text.boundingBox.min, text.boundingBox.max)
+        let dx = min.x + 0.5 * (max.x - min.x)
+        let dy = min.y + 0.5 * (max.y - min.y)
+        let dz = min.z + 0.5 * (max.z - min.z)
+        textNode.pivot = SCNMatrix4MakeTranslation(dx, dy, dz)
+        textNode.scale = SCNVector3(x: self.FONT_SCALE, y: self.FONT_SCALE, z: self.FONT_SCALE)
+        addBillboardConstraint(textNode)
+        
+        return textNode
+    }
+    
+    func createPlaneNode(color: UIColor) -> SCNNode {
+        let (width, height) = (4 / self.PLANE_SCALE, 3 / self.PLANE_SCALE)
+        let plane = SCNPlane(width: CGFloat(width), height: CGFloat(height))
+        plane.firstMaterial?.diffuse.contents = color
+        plane.firstMaterial?.lightingModel = .physicallyBased
+        let planeNode = SCNNode(geometry: plane)
+        addBillboardConstraint(planeNode)
+        planeNode.movabilityHint = .movable
+        planeNode.name = self.PLANE_NAME
+        
+        return planeNode
+    }
+    
+    func addBillboardConstraint(_ node: SCNNode) {
+        let billboardConstraint = SCNBillboardConstraint()
+        billboardConstraint.freeAxes = SCNBillboardAxis.all
+        node.constraints = [billboardConstraint]
+    }
+    
+    func normalizeUIColor(red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) -> UIColor {
+        return UIColor.init(
+            red: red / 255,
+            green: green / 255,
+            blue: blue / 255,
+            alpha: alpha
+        )
+    }
+    
     
     func session(_ session: ARSession, didFailWithError error: Error) {
         // Present an error message to the user
